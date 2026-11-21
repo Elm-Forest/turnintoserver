@@ -857,8 +857,10 @@ final class AppState: ObservableObject {
             if !sleepDisabledHealthWarning {
                 lastCommandStatus = AppText.sleepDisabledHealthRecoveryFailed
             }
+            // Keep the app's running-mode bookkeeping intact so a manual
+            // Stop still terminates the active caffeinate process cleanly.
+            // The health warning reflects the failed kernel-level flag.
             sleepDisabledHealthWarning = true
-            serverModeActive = false
         }
     }
 
