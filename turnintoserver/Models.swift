@@ -229,7 +229,7 @@ enum AppText {
     }
 
     static var autoRepairSleepDisabled: String {
-        localized(chinese: "持续检查并恢复合盖运行", english: "Monitor and Restore Closed-Lid Mode")
+        localized(chinese: "持续检查", english: "Continuous Check")
     }
 
     static var sleepDisabledHealthWarning: String {
