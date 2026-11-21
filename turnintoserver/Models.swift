@@ -228,6 +228,26 @@ enum AppText {
         localized(chinese: "开机自动启动", english: "Open at Login")
     }
 
+    static var autoRepairSleepDisabled: String {
+        localized(chinese: "持续检查并恢复合盖运行", english: "Monitor and Restore Closed-Lid Mode")
+    }
+
+    static var sleepDisabledHealthWarning: String {
+        localized(chinese: "警告：防睡眠状态异常，合盖可能进入睡眠", english: "Warning: sleep prevention is inactive or unverified")
+    }
+
+    static var sleepDisabledHealthProbeFailed: String {
+        localized(chinese: "检查防睡眠状态失败", english: "Could not verify sleep prevention")
+    }
+
+    static var sleepDisabledHealthRecovered: String {
+        localized(chinese: "已恢复合盖防睡眠状态", english: "Closed-lid sleep prevention restored")
+    }
+
+    static var sleepDisabledHealthRecoveryFailed: String {
+        localized(chinese: "恢复防睡眠状态失败，请检查授权", english: "Sleep prevention recovery failed; check authorization")
+    }
+
     static var automaticRouting: String {
         localized(chinese: "打开自动路由表", english: "Enable Automatic Routing")
     }

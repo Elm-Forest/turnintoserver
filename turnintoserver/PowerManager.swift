@@ -88,12 +88,29 @@ final class PowerManager {
     }
 
     func detectSleepDisabled() async -> Bool {
+        await sleepDisabledStatus() ?? false
+    }
+
+    // nil means the probe failed, not that the sleep assertion is off.
+    func sleepDisabledStatus() async -> Bool? {
         do {
-            let result = try await ShellRunner.run("/usr/sbin/ioreg", arguments: ["-r", "-k", "SleepDisabled"])
-            return result.stdout.contains(#""SleepDisabled" = Yes"#)
+            let result = try await ShellRunner.run("/usr/bin/pmset", arguments: ["-g"])
+            guard result.exitCode == 0 else { return nil }
+            for line in result.stdout.split(whereSeparator: \.isNewline) {
+                let fields = line.split(whereSeparator: \.isWhitespace)
+                guard fields.count >= 2, fields[0] == "SleepDisabled" else { continue }
+                if fields[1] == "1" { return true }
+                if fields[1] == "0" { return false }
+            }
+            return nil
         } catch {
-            return false
+            return nil
         }
+    }
+
+    // Never request interactive administrator privileges on a background timer.
+    func restoreSleepDisabledWithoutPrompt() async -> PowerCommandResult {
+        await runPasswordlessPmset(disablesleepValue: "1")
     }
 
     private func setSleepDisabled(_ isDisabled: Bool) async -> PowerCommandResult {

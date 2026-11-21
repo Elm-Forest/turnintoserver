@@ -734,6 +734,17 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
         batteryRowView = batteryView
         menu.addItem(batteryItem)
 
+        let healthCheckItem = NSMenuItem()
+        let healthCheckView = MenuToggleRowView(
+            title: AppText.autoRepairSleepDisabled,
+            isOn: appState.autoRepairSleepDisabled,
+            isToggleEnabled: true,
+            target: self,
+            toggleAction: #selector(toggleAutoRepairSleepDisabled(_:))
+        )
+        healthCheckItem.view = healthCheckView
+        menu.addItem(healthCheckItem)
+
         let lowBatteryItem = NSMenuItem()
         let lowBatteryView = MenuToggleRowView(
             title: AppText.lowBatteryNotifications,
@@ -1370,6 +1381,11 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func toggleBatteryServerMode(_ sender: Any?) {
         appState.toggleBatteryServerMode()
         updateStatusButton()
+        refreshMenuSoon()
+    }
+
+    @objc private func toggleAutoRepairSleepDisabled(_ sender: Any?) {
+        appState.toggleAutoRepairSleepDisabled()
         refreshMenuSoon()
     }
 
