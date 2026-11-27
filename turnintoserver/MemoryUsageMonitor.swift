@@ -102,37 +102,26 @@ struct SystemPressureHistory {
 }
 
 final class MemoryUsageHistoryStore {
-    static let historyStorage = "persistent_file"
-    static let historyNote = "History is persisted under Application Support across app restarts and updates, retained up to 24 hours. Samples are collected only while turnintoserver is running."
+    static let historyStorage = "memory_only"
+    static let historyNote = "Memory and CPU history are retained in RAM for 24 hours while the app runs, with no disk writes. History resets on restart."
 
     private struct AppSeries: Codable {
         var appName: String
         var points: [MemoryUsageHistoryPoint] = []
     }
 
-    private struct PersistedHistory: Codable {
-        let version: Int
-        let savedAt: Date
-        let seriesByAppID: [String: AppSeries]
-        let systemPoints: [SystemPressureHistoryPoint]
-    }
-
     private let retention: TimeInterval
     private let sampleInterval: TimeInterval
-    private let persistenceURL: URL
     private var seriesByAppID: [String: AppSeries] = [:]
     private var systemPoints: [SystemPressureHistoryPoint] = []
     private var lastRecordedAt: Date?
 
     init(
         retention: TimeInterval = 24 * 60 * 60,
-        sampleInterval: TimeInterval = 30,
-        persistenceURL: URL = MemoryUsageHistoryStore.defaultPersistenceURL()
+        sampleInterval: TimeInterval = 30
     ) {
         self.retention = retention
         self.sampleInterval = sampleInterval
-        self.persistenceURL = persistenceURL
-        loadPersistedHistory()
     }
 
     func recordIfNeeded(snapshot: MemoryUsageSnapshot) {
@@ -165,8 +154,9 @@ final class MemoryUsageHistoryStore {
             seriesByAppID[entry.id] = series
         }
 
+        // Keep history in RAM. Previously each 30-second sample rewrote
+        // the entire multi-MB plist, causing excessive SSD writes.
         prune(cutoff: cutoff)
-        persistHistory()
     }
 
     func history(matching query: String, physicalMemoryBytes: UInt64) -> MemoryUsageHistory? {
@@ -317,68 +307,6 @@ final class MemoryUsageHistoryStore {
             physicalMemoryBytes: physicalMemoryBytes,
             points: points
         )
-    }
-
-    private static func defaultPersistenceURL() -> URL {
-        let directory = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        )[0]
-        .appendingPathComponent("turnintoserver", isDirectory: true)
-
-        return directory.appendingPathComponent("memory-history-v1.plist")
-    }
-
-    private func loadPersistedHistory() {
-        guard let data = try? Data(contentsOf: persistenceURL),
-              !data.isEmpty else {
-            return
-        }
-
-        do {
-            let persisted = try PropertyListDecoder().decode(PersistedHistory.self, from: data)
-            systemPoints = persisted.systemPoints.sorted { $0.timestamp < $1.timestamp }
-            seriesByAppID = persisted.seriesByAppID.mapValues { series in
-                AppSeries(
-                    appName: series.appName,
-                    points: series.points.sorted { $0.timestamp < $1.timestamp }
-                )
-            }
-
-            let latestAppTimestamp = seriesByAppID.values
-                .compactMap { $0.points.last?.timestamp }
-                .max()
-            lastRecordedAt = [systemPoints.last?.timestamp, latestAppTimestamp]
-                .compactMap { $0 }
-                .max()
-
-            prune(cutoff: Date().addingTimeInterval(-retention))
-        } catch {
-            NSLog("turnintoserver failed to load memory history: \(error.localizedDescription)")
-        }
-    }
-
-    private func persistHistory() {
-        do {
-            try FileManager.default.createDirectory(
-                at: persistenceURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-
-            let persisted = PersistedHistory(
-                version: 1,
-                savedAt: Date(),
-                seriesByAppID: seriesByAppID,
-                systemPoints: systemPoints
-            )
-            let encoder = PropertyListEncoder()
-            encoder.outputFormat = .binary
-            let data = try encoder.encode(persisted)
-            try data.write(to: persistenceURL, options: .atomic)
-        } catch {
-            NSLog("turnintoserver failed to persist memory history: \(error.localizedDescription)")
-        }
     }
 
     private func prune(cutoff: Date) {

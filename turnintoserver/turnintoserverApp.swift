@@ -351,6 +351,7 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
     private var memorySectionExpanded = false
     private var lastServerModeMemoryDefaultExpanded = false
     private weak var batteryRowView: MenuToggleRowView?
+    private weak var autoRepairSleepDisabledRowView: MenuToggleRowView?
     private weak var lowBatteryRowView: MenuToggleRowView?
     private weak var shortcutsRowView: MenuToggleRowView?
     private weak var launchAtLoginRowView: MenuToggleRowView?
@@ -434,6 +435,7 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
             appState.$serverModeActive.map { _ in () }.eraseToAnyPublisher(),
             appState.$serverModeRequested.map { _ in () }.eraseToAnyPublisher(),
             appState.$allowBatteryServerMode.map { _ in () }.eraseToAnyPublisher(),
+            appState.$autoRepairSleepDisabled.map { _ in () }.eraseToAnyPublisher(),
             appState.$lowBatteryNotificationsEnabled.map { _ in () }.eraseToAnyPublisher(),
             appState.$hotKeysEnabled.map { _ in () }.eraseToAnyPublisher(),
             appState.$launchAtLoginEnabled.map { _ in () }.eraseToAnyPublisher(),
@@ -660,6 +662,7 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
         memorySectionHeaderRowView = nil
         topMemoryAppRowViews = []
         batteryRowView = nil
+        autoRepairSleepDisabledRowView = nil
         lowBatteryRowView = nil
         shortcutsRowView = nil
         launchAtLoginRowView = nil
@@ -733,6 +736,18 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
         batteryItem.view = batteryView
         batteryRowView = batteryView
         menu.addItem(batteryItem)
+
+        let healthCheckItem = NSMenuItem()
+        let healthCheckView = MenuToggleRowView(
+            title: AppText.autoRepairSleepDisabled,
+            isOn: appState.autoRepairSleepDisabled,
+            isToggleEnabled: true,
+            target: self,
+            toggleAction: #selector(toggleAutoRepairSleepDisabled(_:))
+        )
+        healthCheckItem.view = healthCheckView
+        autoRepairSleepDisabledRowView = healthCheckView
+        menu.addItem(healthCheckItem)
 
         let lowBatteryItem = NSMenuItem()
         let lowBatteryView = MenuToggleRowView(
@@ -1153,6 +1168,7 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
               let timedServerModeMenuItem,
               let timedServerModeRowView,
               let batteryRowView,
+              let autoRepairSleepDisabledRowView,
               let lowBatteryRowView,
               let shortcutsRowView,
               let launchAtLoginRowView,
@@ -1190,6 +1206,11 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
             isOn: appState.allowBatteryServerMode,
             isToggleEnabled: !appState.isCommandRunning,
             shortcutTitle: batteryModeShortcutDisplay
+        )
+        autoRepairSleepDisabledRowView.update(
+            title: AppText.autoRepairSleepDisabled,
+            isOn: appState.autoRepairSleepDisabled,
+            isToggleEnabled: true
         )
         lowBatteryRowView.update(
             title: AppText.lowBatteryNotifications,
@@ -1233,6 +1254,7 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
             memorySectionHeaderRowView,
             timedServerModeRowView,
             batteryRowView,
+            autoRepairSleepDisabledRowView,
             lowBatteryRowView,
             shortcutsRowView,
             launchAtLoginRowView,
@@ -1370,6 +1392,19 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func toggleBatteryServerMode(_ sender: Any?) {
         appState.toggleBatteryServerMode()
         updateStatusButton()
+        refreshMenuSoon()
+    }
+
+    @objc private func toggleAutoRepairSleepDisabled(_ sender: Any?) {
+        appState.toggleAutoRepairSleepDisabled()
+        // Custom menu rows do not inherit NSMenuItem's native checkmark.
+        // Update the visible row immediately, then refresh the other rows.
+        autoRepairSleepDisabledRowView?.update(
+            title: AppText.autoRepairSleepDisabled,
+            isOn: appState.autoRepairSleepDisabled,
+            isToggleEnabled: true
+        )
+        autoRepairSleepDisabledRowView?.displayIfNeeded()
         refreshMenuSoon()
     }
 

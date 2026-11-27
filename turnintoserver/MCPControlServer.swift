@@ -468,7 +468,7 @@ final class MCPControlServer {
             guard let history = appState.memoryUsageHistory(matching: appQuery) else {
                 throw ControlFailure(
                     code: "history_not_found",
-                    message: "No memory history matched app query: \(appQuery). History is persisted for up to 24 hours, but samples are collected only while turnintoserver is running."
+                    message: "No memory history matched app query: \(appQuery). History is kept in RAM for up to 24 hours and resets on app restart; samples are only collected while turnintoserver is running."
                 )
             }
 

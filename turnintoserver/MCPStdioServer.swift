@@ -30,7 +30,7 @@ final class MCPStdioServer {
     Read-only questions:
     - Use turnintoserver_get_app_state for current app state: Server Mode requested/active, automatic routing, mute-on-enable, power source, lid state, timed Server Mode, low battery notification readiness, shortcut settings, launch at login, and guide version.
     - Use turnintoserver_get_system_load for current system pressure and the current memory top apps.
-    - Use turnintoserver_get_memory_history for historical memory/CPU questions. For example, "过去24小时 Codex 峰值内存" means call turnintoserver_get_memory_history with {"app":"Codex"}. Report peak memory, peak timestamp, current memory, and that history is persisted on disk across app restarts and updates, retained up to 24 hours. Samples are collected only while turnintoserver is running.
+    - Use turnintoserver_get_memory_history for historical memory/CPU questions. For example, "过去24小时 Codex 峰值内存" means call turnintoserver_get_memory_history with {"app":"Codex"}. Report peak memory, peak timestamp, and current memory. History is kept in RAM only, retained for up to 24 hours of active sampling, and is cleared when turnintoserver restarts. No history is written to disk.
     - If the user asks about "Codex", "Hermes", "Chrome", or another app by name, pass that name as the app query instead of requiring an exact bundle path.
 
     Settings and actions:
@@ -61,7 +61,7 @@ final class MCPStdioServer {
 
     Troubleshooting:
     - If turnintoserver_get_memory_history returns no matching app, retry with a shorter app name such as "Codex" instead of a full path, then fall back to turnintoserver_get_system_load for current top apps.
-    - If historical data is shorter than requested, explain that turnintoserver stores persisted history for up to 24 hours but only collects samples while the app is running. Short gaps can occur while the app is stopped during restart or update.
+    - If historical data is shorter than requested, explain that history is stored in RAM only and resets on app restart; samples are collected only while turnintoserver is running.
     - If the host agent already had an older turnintoserver MCP entry, update it in place instead of adding a duplicate entry.
     - If the host agent supports skills, memory, or local instruction files, store this guide there after install or upgrade so future user questions route to the MCP immediately.
     - If a setting is not listed by turnintoserver_list_options, do not invent a hidden option. Report that the current app version does not expose it.
@@ -105,7 +105,7 @@ final class MCPStdioServer {
             [
                 "name": "turnintoserver_get_memory_history",
                 "title": "获取内存历史",
-                "description": "读取系统压力或指定 App 在持久化历史中、最多过去 24 小时的内存和 CPU 峰值。",
+                "description": "读取运行期间内存中的最近最多 24 小时系统压力和指定 App 的内存与 CPU 峰值（退出后清空）。",
                 "inputSchema": [
                     "type": "object",
                     "properties": [

@@ -14,6 +14,7 @@ final class AppState: ObservableObject {
         static let serverModeRuntimeHeartbeatAt = "serverModeRuntimeHeartbeatAt"
         static let timedServerModeEndDate = "timedServerModeEndDate"
         static let timedServerModeSelectedDurationMinutes = "timedServerModeSelectedDurationMinutes"
+        static let autoRepairSleepDisabled = "autoRepairSleepDisabled"
     }
 
     static let builtInTimedServerModeDurationOptions = [30, 60, 120, 180, 360, 720]
@@ -22,6 +23,7 @@ final class AppState: ObservableObject {
     private static let maximumTimedServerModeDurationMinutes = 7 * 24 * 60
     private static let maximumSavedRuntimeHeartbeatAge: TimeInterval = 5 * 60
     private static let topMemoryAppsRefreshInterval: TimeInterval = 2
+    private static let sleepDisabledHealthCheckInterval: TimeInterval = 10
 
     @Published private(set) var powerSource: PowerSource {
         didSet {
@@ -177,6 +179,22 @@ final class AppState: ObservableObject {
         }
     }
 
+    @Published private(set) var autoRepairSleepDisabled: Bool {
+        didSet {
+            defaults.set(autoRepairSleepDisabled, forKey: DefaultsKey.autoRepairSleepDisabled)
+            updateSleepDisabledHealthCheckTimer()
+            notifyMenuShouldRefresh()
+        }
+    }
+
+    @Published private(set) var sleepDisabledHealthWarning = false {
+        didSet {
+            if oldValue != sleepDisabledHealthWarning {
+                notifyStatusIconShouldRefresh()
+            }
+        }
+    }
+
     @Published private(set) var topMemoryApps: [MemoryUsageApp] = [] {
         didSet {
             notifyMenuShouldRefresh()
@@ -209,6 +227,8 @@ final class AppState: ObservableObject {
     private var isHandlingTimedServerModeExpiration = false
     private var batteryNotificationTimer: Timer?
     private var topMemoryAppsTimer: Timer?
+    private var sleepDisabledHealthCheckTimer: Timer?
+    private var isCheckingSleepDisabledHealth = false
     private var sentLowBatteryThresholds = Set<Int>()
     private var isRefreshingTopMemoryApps = false
     private var topMemoryAppsRefreshTask: Task<Void, Never>?
@@ -237,6 +257,7 @@ final class AppState: ObservableObject {
         self.powerManager = powerManager ?? PowerManager()
         self.memoryMonitor = memoryMonitor
         self.memoryHistoryStore = memoryHistoryStore
+        autoRepairSleepDisabled = defaults.bool(forKey: DefaultsKey.autoRepairSleepDisabled)
         self.launchAtLoginManager = launchAtLoginManager
         self.automaticRouteManager = automaticRouteManager ?? AutomaticRouteManager(
             defaults: defaults,
@@ -391,6 +412,10 @@ final class AppState: ObservableObject {
     var statusSummaryDisplay: String {
         guard serverModeRequested else {
             return AppText.notStarted
+        }
+
+        if sleepDisabledHealthWarning {
+            return AppText.sleepDisabledHealthWarning
         }
 
         if powerSource == .batteryPower, !canRunServerMode(on: powerSource) {
@@ -738,6 +763,7 @@ final class AppState: ObservableObject {
         startWakeObservers()
         startBatteryNotificationTimer()
         startTopMemoryAppsTimer()
+        updateSleepDisabledHealthCheckTimer()
 
         if automaticRoutingEnabled {
             automaticRouteManager.startMonitoring()
@@ -762,6 +788,79 @@ final class AppState: ObservableObject {
         Task {
             await refreshServerModeStatus()
             await stopExpiredTimedServerModeOnStartIfNeeded()
+        }
+    }
+
+    func toggleAutoRepairSleepDisabled() {
+        autoRepairSleepDisabled.toggle()
+    }
+
+    private func updateSleepDisabledHealthCheckTimer() {
+        sleepDisabledHealthCheckTimer?.invalidate()
+        sleepDisabledHealthCheckTimer = nil
+        guard hasStarted, autoRepairSleepDisabled else { return }
+
+        let timer = Timer.scheduledTimer(
+            withTimeInterval: Self.sleepDisabledHealthCheckInterval,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.checkSleepDisabledHealth()
+            }
+        }
+        sleepDisabledHealthCheckTimer = timer
+        Task { @MainActor [weak self] in
+            await self?.checkSleepDisabledHealth()
+        }
+    }
+
+    private func checkSleepDisabledHealth() async {
+        guard autoRepairSleepDisabled,
+              serverModeRequested,
+              !isCheckingSleepDisabledHealth,
+              !isCommandRunning,
+              !isSystemSleepTransitionActive,
+              !isHandlingTimedServerModeExpiration,
+              timedServerModeEndDate.map({ $0 > Date() }) ?? true,
+              canRunServerMode(on: powerSource) else {
+            return
+        }
+
+        isCheckingSleepDisabledHealth = true
+        defer { isCheckingSleepDisabledHealth = false }
+
+        guard let isDisabled = await powerManager.sleepDisabledStatus() else {
+            if !sleepDisabledHealthWarning {
+                lastCommandStatus = AppText.sleepDisabledHealthProbeFailed
+            }
+            sleepDisabledHealthWarning = true
+            return
+        }
+
+        if isDisabled {
+            if sleepDisabledHealthWarning {
+                lastCommandStatus = AppText.sleepDisabledHealthRecovered
+            }
+            sleepDisabledHealthWarning = false
+            if !serverModeActive { serverModeActive = true }
+            return
+        }
+
+        // A third-party process cleared the global sleep-prevention flag.
+        let result = await powerManager.restoreSleepDisabledWithoutPrompt()
+        let confirmed = await powerManager.sleepDisabledStatus() == true
+        if case .success = result, confirmed {
+            serverModeActive = true
+            sleepDisabledHealthWarning = false
+            lastCommandStatus = AppText.sleepDisabledHealthRecovered
+        } else {
+            if !sleepDisabledHealthWarning {
+                lastCommandStatus = AppText.sleepDisabledHealthRecoveryFailed
+            }
+            // Keep the app's running-mode bookkeeping intact so a manual
+            // Stop still terminates the active caffeinate process cleanly.
+            // The health warning reflects the failed kernel-level flag.
+            sleepDisabledHealthWarning = true
         }
     }
 
@@ -1318,6 +1417,8 @@ final class AppState: ObservableObject {
 
         clearTimedServerModeLimit()
         serverModeRequested = false
+        sleepDisabledHealthCheckTimer?.invalidate()
+        sleepDisabledHealthCheckTimer = nil
 
         if serverModeActive {
             await stopServerMode(clearRequest: true)
@@ -1727,6 +1828,7 @@ final class AppState: ObservableObject {
     }
 
     private func applyStart(_ result: PowerCommandResult) {
+        sleepDisabledHealthWarning = false
         switch result {
         case .success(let message):
             serverModeRequested = true
